@@ -39,4 +39,9 @@ public class Coupon {
     private Integer discountPrice;
 
     private String imageUrl;
+
+    // 쿠폰 사용 처리 (기존 CouponService의 리플렉션 필드 조작을 대체)
+    public void markAsUsed() {
+        this.isUsed = true;
+    }
 }

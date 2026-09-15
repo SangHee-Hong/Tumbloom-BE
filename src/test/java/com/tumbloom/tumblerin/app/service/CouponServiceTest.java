@@ -65,7 +65,8 @@ class CouponServiceTest {
 
     @BeforeEach
     void setUp() {
-        couponService = new CouponService(couponRepository, couponManagerRepository, cafeRepository);
+        // GeoDistanceCalculator는 순수 계산 로직이라 mock 대신 실제 구현체를 사용 (거리순 정렬 검증을 위해 필요)
+        couponService = new CouponService(couponRepository, couponManagerRepository, cafeRepository, new GeoDistanceCalculator());
     }
 
     private Point point(double lat, double lng) {
