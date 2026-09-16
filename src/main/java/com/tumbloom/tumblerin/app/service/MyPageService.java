@@ -27,6 +27,7 @@ public class MyPageService {
     private final CouponRepository couponRepository;
     private final StampRepository stampRepository;
     private final FavoriteRepository favoriteRepository;
+    private final StampLevel stampLevel;
 
     @Transactional(readOnly = true)
     public UserMyPageResponseDTO getUserInfo(Long userId){
@@ -39,8 +40,8 @@ public class MyPageService {
         int availableCoupons = couponRepository.countByUserIdAndIsUsedFalse(userId);
         int favoriteCafes = favoriteRepository.countByUserId(userId);
 
-        int level = getLevel(tumblerCount);
-        int stepsLeft = remainingToNextLevel(tumblerCount);
+        int level = stampLevel.getLevel(tumblerCount);
+        int stepsLeft = stampLevel.remainingToNextLevel(tumblerCount);
 
         return UserMyPageResponseDTO.builder()
                 .nickname(user.getNickname())
@@ -118,44 +119,5 @@ public class MyPageService {
                 })
                 .collect(Collectors.toList());
     }
-
-    public static int getLevel(int stampCount) {
-        if (stampCount <= 4) return 1; // Lv1
-        else if (stampCount <= 10) return 2; // Lv2
-        else if (stampCount <= 20) return 3; // Lv3
-        else if (stampCount <= 40) return 4; // Lv4
-        else return 5; // Lv5
-    }
-
-    public static int remainingToNextLevel(int stampCount) {
-        if (stampCount <= 4) return 5 - stampCount;
-        else if (stampCount <= 10) return 11 - stampCount;
-        else if (stampCount <= 20) return 21 - stampCount;
-        else if (stampCount <= 40) return 41 - stampCount;
-        else return 0;
-    }
-
-    public static int getMinStampsForLevel(int level) {
-        return switch(level) {
-            case 1 -> 0;
-            case 2 -> 5;
-            case 3 -> 11;
-            case 4 -> 21;
-            case 5 -> 41;
-            default -> 0;
-        };
-    }
-
-    public static int getMaxStampsForLevel(int level) {
-        return switch(level) {
-            case 1 -> 4;
-            case 2 -> 10;
-            case 3 -> 20;
-            case 4 -> 40;
-            case 5 -> Integer.MAX_VALUE;
-            default -> 0;
-        };
-    }
-
 
 }

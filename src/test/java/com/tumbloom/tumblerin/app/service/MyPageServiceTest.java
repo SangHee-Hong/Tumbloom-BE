@@ -48,10 +48,13 @@ class MyPageServiceTest {
     private FavoriteRepository favoriteRepository;
 
     private MyPageService myPageService;
+    private StampLevel stampLevel;
 
     @BeforeEach
     void setUp() {
-        myPageService = new MyPageService(userRepository, couponRepository, stampRepository, favoriteRepository);
+        // StampLevel은 순수 계산 로직이라 mock 대신 실제 구현체를 사용
+        stampLevel = new StampLevel();
+        myPageService = new MyPageService(userRepository, couponRepository, stampRepository, favoriteRepository, stampLevel);
     }
 
     private User user(Long id, String nickname) {
@@ -222,7 +225,7 @@ class MyPageServiceTest {
             "1000, 5",
     })
     void getLevel_임계값_경계에서_정확한_레벨을_반환한다(int stampCount, int expectedLevel) {
-        assertThat(MyPageService.getLevel(stampCount)).isEqualTo(expectedLevel);
+        assertThat(stampLevel.getLevel(stampCount)).isEqualTo(expectedLevel);
     }
 
     @ParameterizedTest(name = "stampCount={0} -> remaining={1}")
@@ -239,7 +242,7 @@ class MyPageServiceTest {
             "1000, 0",
     })
     void remainingToNextLevel_임계값_경계에서_정확한_잔여치를_반환한다(int stampCount, int expectedRemaining) {
-        assertThat(MyPageService.remainingToNextLevel(stampCount)).isEqualTo(expectedRemaining);
+        assertThat(stampLevel.remainingToNextLevel(stampCount)).isEqualTo(expectedRemaining);
     }
 
     @ParameterizedTest(name = "level={0} -> min={1}, max={2}")
@@ -251,20 +254,20 @@ class MyPageServiceTest {
             // level 5의 max는 Integer.MAX_VALUE라 별도 테스트로 검증
     })
     void getMinMaxStampsForLevel_레벨별_구간을_반환한다(int level, int expectedMin, int expectedMax) {
-        assertThat(MyPageService.getMinStampsForLevel(level)).isEqualTo(expectedMin);
-        assertThat(MyPageService.getMaxStampsForLevel(level)).isEqualTo(expectedMax);
+        assertThat(stampLevel.getMinStampsForLevel(level)).isEqualTo(expectedMin);
+        assertThat(stampLevel.getMaxStampsForLevel(level)).isEqualTo(expectedMax);
     }
 
     @Test
     void getMaxStampsForLevel_5는_MAX_VALUE이다() {
-        assertThat(MyPageService.getMaxStampsForLevel(5)).isEqualTo(Integer.MAX_VALUE);
+        assertThat(stampLevel.getMaxStampsForLevel(5)).isEqualTo(Integer.MAX_VALUE);
     }
 
     @Test
     void getMinMaxStampsForLevel_정의되지_않은_레벨은_0을_반환한다() {
-        assertThat(MyPageService.getMinStampsForLevel(0)).isEqualTo(0);
-        assertThat(MyPageService.getMaxStampsForLevel(0)).isEqualTo(0);
-        assertThat(MyPageService.getMinStampsForLevel(6)).isEqualTo(0);
-        assertThat(MyPageService.getMaxStampsForLevel(6)).isEqualTo(0);
+        assertThat(stampLevel.getMinStampsForLevel(0)).isEqualTo(0);
+        assertThat(stampLevel.getMaxStampsForLevel(0)).isEqualTo(0);
+        assertThat(stampLevel.getMinStampsForLevel(6)).isEqualTo(0);
+        assertThat(stampLevel.getMaxStampsForLevel(6)).isEqualTo(0);
     }
 }

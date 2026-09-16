@@ -1,7 +1,6 @@
 package com.tumbloom.tumblerin.app.service;
 
 import com.tumbloom.tumblerin.app.domain.RefreshToken;
-import com.tumbloom.tumblerin.app.repository.RefreshTokenRepository;
 import com.tumbloom.tumblerin.app.repository.UserRepository;
 import com.tumbloom.tumblerin.app.domain.RoleType;
 import com.tumbloom.tumblerin.app.domain.User;
@@ -18,22 +17,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
-import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
-    private final BCryptPasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenService refreshTokenService;
 
     public void signup(SignupRequestDTO request) {
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
@@ -57,7 +54,7 @@ public class UserService {
 
         // 비밀번호 검증
         try {
-            Authentication authentication = authenticationManager.authenticate(
+            authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
             );
         } catch (BadCredentialsException ex) {
@@ -69,13 +66,7 @@ public class UserService {
         String accessToken = jwtTokenProvider.createAccessToken(email);
         String refreshToken = jwtTokenProvider.createRefreshToken(email);
 
-        RefreshToken tokenEntity = RefreshToken.builder()
-                .email(email)
-                .refreshToken(refreshToken)
-                .expiryDate(new Date())
-                .build();
-
-        refreshTokenRepository.save(tokenEntity);
+        refreshTokenService.issue(email, refreshToken);
 
         // 쿠키에 refreshtoken 저장
         jwtTokenProvider.addRefreshTokenCookie(response, refreshToken);
@@ -86,27 +77,17 @@ public class UserService {
     // 로그아웃
     public void logout(HttpServletRequest request, HttpServletResponse response) {
 
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            throw new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, "쿠키가 없습니다.");
-        }
-
-        String refreshToken = Arrays.stream(request.getCookies())
-                .filter(c -> c.getName().equals("refreshToken"))
-                .findFirst()
-                .map(Cookie::getValue)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, "쿠키에 Refresh Token이 없음"));
-
+        String refreshToken = extractRefreshTokenCookie(request, "쿠키가 없습니다.", "쿠키에 Refresh Token이 없음");
 
         jwtTokenProvider.validateRefreshToken(refreshToken);
 
         String email = jwtTokenProvider.getUserEmailFromToken(refreshToken);
-        RefreshToken storedToken = refreshTokenRepository.findById(email)
+        RefreshToken storedToken = refreshTokenService.findByEmail(email)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, "로그아웃 대상 Refresh Token이 존재하지 않습니다."));
-        if (!storedToken.getRefreshToken().equals(refreshToken)) {
+        if (!refreshTokenService.matches(storedToken, refreshToken)) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_MISMATCH, "Refresh Token이 일치하지 않아 로그아웃할 수 없습니다.");
         }
-        refreshTokenRepository.delete(storedToken);
+        refreshTokenService.delete(storedToken);
 
         jwtTokenProvider.removeRefreshTokenCookie(response);
     }
@@ -114,31 +95,34 @@ public class UserService {
     // 토큰 재발급
     public TokenResponseDTO refresh(HttpServletRequest request) {
 
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            throw new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, "쿠키가 없습니다.");
-        }
-
-        //쿠키에서 refresh token 꺼내기
-        String refreshToken = Arrays.stream(request.getCookies())
-                .filter(c -> c.getName().equals("refreshToken"))
-                .findFirst()
-                .map(Cookie::getValue)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, "Refresh Token이 쿠키에 없음"));
-
+        String refreshToken = extractRefreshTokenCookie(request, "쿠키가 없습니다.", "Refresh Token이 쿠키에 없음");
 
         jwtTokenProvider.validateRefreshToken(refreshToken);
         String email = jwtTokenProvider.getUserEmailFromToken(refreshToken);
 
-        RefreshToken storedToken = refreshTokenRepository.findById(email)
+        RefreshToken storedToken = refreshTokenService.findByEmail(email)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, "Refresh Token이 존재하지 않습니다."));
 
-        if (!storedToken.getRefreshToken().equals(refreshToken)) {
+        if (!refreshTokenService.matches(storedToken, refreshToken)) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_MISMATCH, "Refresh Token이 일치하지 않습니다.");
         }
 
         String newAccessToken = jwtTokenProvider.createAccessToken(email);
 
         return new TokenResponseDTO(newAccessToken);
+    }
+
+    // 쿠키에서 refreshToken 값 추출 (logout/refresh에 중복되어 있던 로직을 통합, 호출부별 에러 메시지는 그대로 유지)
+    private String extractRefreshTokenCookie(HttpServletRequest request, String noCookiesDetail, String noRefreshTokenDetail) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, noCookiesDetail);
+        }
+
+        return Arrays.stream(cookies)
+                .filter(c -> c.getName().equals("refreshToken"))
+                .findFirst()
+                .map(Cookie::getValue)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND, noRefreshTokenDetail));
     }
 }

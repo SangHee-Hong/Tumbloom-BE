@@ -6,7 +6,6 @@ import com.tumbloom.tumblerin.app.domain.User;
 import com.tumbloom.tumblerin.app.dto.Authdto.LoginRequestDTO;
 import com.tumbloom.tumblerin.app.dto.Authdto.SignupRequestDTO;
 import com.tumbloom.tumblerin.app.dto.Authdto.TokenResponseDTO;
-import com.tumbloom.tumblerin.app.repository.RefreshTokenRepository;
 import com.tumbloom.tumblerin.app.repository.UserRepository;
 import com.tumbloom.tumblerin.global.dto.ErrorCode;
 import com.tumbloom.tumblerin.global.exception.BusinessException;
@@ -29,7 +28,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,7 +50,7 @@ class UserServiceTest {
     @Mock
     private JwtTokenProvider jwtTokenProvider;
     @Mock
-    private RefreshTokenRepository refreshTokenRepository;
+    private RefreshTokenService refreshTokenService;
     @Mock
     private HttpServletRequest request;
     @Mock
@@ -63,7 +61,8 @@ class UserServiceTest {
     @BeforeEach
     void setUp() {
         // BCryptPasswordEncoder는 순수 암호화 로직이라 mock 대신 실제 구현체를 사용 (인코딩 결과 검증을 위해 필요)
-        userService = new UserService(userRepository, new BCryptPasswordEncoder(), authenticationManager, jwtTokenProvider, refreshTokenRepository);
+        // BCryptPasswordEncoder는 PasswordEncoder 구현체이므로 그대로 주입 가능
+        userService = new UserService(userRepository, new BCryptPasswordEncoder(), authenticationManager, jwtTokenProvider, refreshTokenService);
     }
 
     private User user(Long id, String email) {
@@ -135,11 +134,7 @@ class UserServiceTest {
 
         assertThat(result.getAccessToken()).isEqualTo("access-token");
 
-        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
-        verify(refreshTokenRepository, times(1)).save(captor.capture());
-        assertThat(captor.getValue().getEmail()).isEqualTo("user@example.com");
-        assertThat(captor.getValue().getRefreshToken()).isEqualTo("refresh-token");
-
+        verify(refreshTokenService, times(1)).issue("user@example.com", "refresh-token");
         verify(jwtTokenProvider, times(1)).addRefreshTokenCookie(response, "refresh-token");
     }
 
@@ -158,7 +153,7 @@ class UserServiceTest {
                 });
 
         verify(authenticationManager, never()).authenticate(any());
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenService, never()).issue(any(), any());
     }
 
     @Test
@@ -176,7 +171,7 @@ class UserServiceTest {
                     assertThat(be.getDetail()).isEqualTo("해당 이메일 계정의 비밀번호가 올바르지 않습니다.");
                 });
 
-        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenService, never()).issue(any(), any());
     }
 
     // ===================== logout =====================
@@ -186,12 +181,13 @@ class UserServiceTest {
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("refreshToken", "refresh-token")});
         when(jwtTokenProvider.getUserEmailFromToken("refresh-token")).thenReturn("user@example.com");
         RefreshToken stored = RefreshToken.builder().email("user@example.com").refreshToken("refresh-token").build();
-        when(refreshTokenRepository.findById("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.findByEmail("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.matches(stored, "refresh-token")).thenReturn(true);
 
         userService.logout(request, response);
 
         verify(jwtTokenProvider, times(1)).validateRefreshToken("refresh-token");
-        verify(refreshTokenRepository, times(1)).delete(stored);
+        verify(refreshTokenService, times(1)).delete(stored);
         verify(jwtTokenProvider, times(1)).removeRefreshTokenCookie(response);
     }
 
@@ -227,7 +223,7 @@ class UserServiceTest {
     void logout_저장된_리프레시토큰이_없으면_404() {
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("refreshToken", "refresh-token")});
         when(jwtTokenProvider.getUserEmailFromToken("refresh-token")).thenReturn("user@example.com");
-        when(refreshTokenRepository.findById("user@example.com")).thenReturn(Optional.empty());
+        when(refreshTokenService.findByEmail("user@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.logout(request, response))
                 .isInstanceOf(BusinessException.class)
@@ -244,7 +240,8 @@ class UserServiceTest {
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("refreshToken", "cookie-token")});
         when(jwtTokenProvider.getUserEmailFromToken("cookie-token")).thenReturn("user@example.com");
         RefreshToken stored = RefreshToken.builder().email("user@example.com").refreshToken("different-token").build();
-        when(refreshTokenRepository.findById("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.findByEmail("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.matches(stored, "cookie-token")).thenReturn(false);
 
         assertThatThrownBy(() -> userService.logout(request, response))
                 .isInstanceOf(BusinessException.class)
@@ -255,7 +252,7 @@ class UserServiceTest {
                     assertThat(be.getDetail()).isEqualTo("Refresh Token이 일치하지 않아 로그아웃할 수 없습니다.");
                 });
 
-        verify(refreshTokenRepository, never()).delete(any());
+        verify(refreshTokenService, never()).delete(any());
         verify(jwtTokenProvider, never()).removeRefreshTokenCookie(any());
     }
 
@@ -266,7 +263,8 @@ class UserServiceTest {
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("refreshToken", "refresh-token")});
         when(jwtTokenProvider.getUserEmailFromToken("refresh-token")).thenReturn("user@example.com");
         RefreshToken stored = RefreshToken.builder().email("user@example.com").refreshToken("refresh-token").build();
-        when(refreshTokenRepository.findById("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.findByEmail("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.matches(stored, "refresh-token")).thenReturn(true);
         when(jwtTokenProvider.createAccessToken("user@example.com")).thenReturn("new-access-token");
 
         TokenResponseDTO result = userService.refresh(request);
@@ -307,7 +305,7 @@ class UserServiceTest {
     void refresh_저장된_리프레시토큰이_없으면_404() {
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("refreshToken", "refresh-token")});
         when(jwtTokenProvider.getUserEmailFromToken("refresh-token")).thenReturn("user@example.com");
-        when(refreshTokenRepository.findById("user@example.com")).thenReturn(Optional.empty());
+        when(refreshTokenService.findByEmail("user@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.refresh(request))
                 .isInstanceOf(BusinessException.class)
@@ -324,7 +322,8 @@ class UserServiceTest {
         when(request.getCookies()).thenReturn(new Cookie[]{new Cookie("refreshToken", "cookie-token")});
         when(jwtTokenProvider.getUserEmailFromToken("cookie-token")).thenReturn("user@example.com");
         RefreshToken stored = RefreshToken.builder().email("user@example.com").refreshToken("different-token").build();
-        when(refreshTokenRepository.findById("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.findByEmail("user@example.com")).thenReturn(Optional.of(stored));
+        when(refreshTokenService.matches(stored, "cookie-token")).thenReturn(false);
 
         assertThatThrownBy(() -> userService.refresh(request))
                 .isInstanceOf(BusinessException.class)
