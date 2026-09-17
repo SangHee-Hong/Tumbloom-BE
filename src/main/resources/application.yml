@@ -18,7 +18,7 @@ spring:
       ddl-auto: update
     properties:
       hibernate:
-        globally_quoted_identifiers: true
+        globally_quoted_identifiers: false
         format_sql: false
         use_sql_comments: false
         dialect: org.hibernate.spatial.dialect.postgis.PostgisPG10Dialect #PostgreSQL

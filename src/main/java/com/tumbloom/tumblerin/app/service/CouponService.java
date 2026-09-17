@@ -30,6 +30,7 @@ public class CouponService {
     private final CouponRepository couponRepository;
     private final CouponManagerRepository couponManagerRepository;
     private final CafeRepository cafeRepository;
+    private final GeoDistanceCalculator geoDistanceCalculator;
 
     private static final int MAX_COUPON_PER_CAFE = 20;
     private static final DateTimeFormatter EXP_FMT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
@@ -46,8 +47,8 @@ public class CouponService {
         return managers.stream()
                 .map(AvailableCafeCouponDto::from)
                 .sorted((a, b) -> Double.compare(
-                        distance(userLat, userLng, a.getLatitude(), a.getLongitude()),
-                        distance(userLat, userLng, b.getLatitude(), b.getLongitude())
+                        geoDistanceCalculator.distanceKm(userLat, userLng, a.getLatitude(), a.getLongitude()),
+                        geoDistanceCalculator.distanceKm(userLat, userLng, b.getLatitude(), b.getLongitude())
                 ))
                 .limit(7)
                 .toList();
@@ -72,7 +73,7 @@ public class CouponService {
 
         Cafe cafe = cm.getCafe();
 
-        setCouponManagerQuantity(cm, cm.getCouponQuantity() - 1);
+        cm.decreaseQuantity();
 
         int discount = DISCOUNT_OPTIONS[random.nextInt(DISCOUNT_OPTIONS.length)];
 
@@ -89,16 +90,6 @@ public class CouponService {
         couponRepository.save(coupon);
 
         return MyCouponDetailResponse.from(coupon);
-    }
-
-    private void setCouponManagerQuantity(CouponManager cm, int newQty) {
-        try {
-            var f = CouponManager.class.getDeclaredField("couponQuantity");
-            f.setAccessible(true);
-            f.setInt(cm, newQty);
-        } catch (Exception e) {
-            throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "쿠폰 수량 갱신 중 오류", e);
-        }
     }
 
     @Transactional(readOnly = true)
@@ -125,27 +116,6 @@ public class CouponService {
         if (Boolean.TRUE.equals(c.getIsUsed())) {
             throw new ResponseStatusException(CONFLICT, "이미 사용된 쿠폰입니다.");
         }
-        setCouponUsed(c, true);
-    }
-
-    private void setCouponUsed(Coupon coupon, boolean used) {
-        try {
-            var f = Coupon.class.getDeclaredField("isUsed");
-            f.setAccessible(true);
-            f.set(coupon, used);
-        } catch (Exception e) {
-            throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "쿠폰 사용 처리 중 오류", e);
-        }
-    }
-
-    // Haversine 거리 계산 (km)
-    private double distance(double lat1, double lon1, double lat2, double lon2) {
-        final int R = 6371;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                        Math.sin(dLon/2) * Math.sin(dLon/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        c.markAsUsed();
     }
 }
