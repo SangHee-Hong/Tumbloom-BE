@@ -7,6 +7,7 @@ import com.tumbloom.tumblerin.app.dto.Userdto.UserMyPageResponseDTO;
 import com.tumbloom.tumblerin.app.security.CustomUserDetails;
 import com.tumbloom.tumblerin.app.service.CafeRecommendationService;
 import com.tumbloom.tumblerin.app.service.MyPageService;
+import com.tumbloom.tumblerin.app.service.StampLevel;
 import com.tumbloom.tumblerin.app.service.UserPreferenceService;
 import com.tumbloom.tumblerin.global.dto.ApiResponseTemplate;
 import com.tumbloom.tumblerin.global.dto.SuccessCode;
@@ -32,6 +33,7 @@ public class MyPageController {
     private final UserPreferenceService userPreferenceService;
     private final CafeRecommendationService cafeRecommendationService;
     private final MyPageService myPageService;
+    private final StampLevel stampLevel;
 
     @Operation(summary = "마이페이지 내 정보 조회",
             description = """
@@ -58,8 +60,8 @@ public class MyPageController {
 
         userinfo.setTopPreferences(topPreferences);
 
-        int min = MyPageService.getMinStampsForLevel(userinfo.getLevel());
-        int max = MyPageService.getMaxStampsForLevel(userinfo.getLevel());
+        int min = stampLevel.getMinStampsForLevel(userinfo.getLevel());
+        int max = stampLevel.getMaxStampsForLevel(userinfo.getLevel());
         double progress = (double)(userinfo.getTumblerCount() - min) / (max - min);
         progress = Math.min(progress, 1.0);
         progress = Math.round(progress * 100.0) / 100.0;
