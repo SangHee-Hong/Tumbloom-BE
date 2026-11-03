@@ -1,5 +1,5 @@
 # CLAUDE.md
-## 이번 작업: ICEY-Backend OOP 설계 점검
+## 이번 작업: TUMBLOOM-Backend OOP 설계 점검
 
 ### 점검 기준
 - Service 클래스에 여러 책임(가격/할인/재고/결제/주문상태)이 몰려있는가?
